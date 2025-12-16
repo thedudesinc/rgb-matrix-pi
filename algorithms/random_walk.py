@@ -16,10 +16,11 @@ class RandomWalkAlgorithm(PathfindingAlgorithm):
         """
         Random walk pathfinding
         Visual effect: Chaotic wandering until it stumbles onto the goal
+        Then shows the shortest path instead of the wandering trail
         """
         current = start
-        visited = {start}
-        path = [start]
+        visited = set()
+        parent = {start: None}
         max_steps = width * height * 2  # Prevent infinite loops
         
         for step in range(max_steps):
@@ -27,10 +28,18 @@ class RandomWalkAlgorithm(PathfindingAlgorithm):
             
             # Check if we reached the end
             if current == end:
+                # Reconstruct shortest path using parent chain
+                path = []
+                node = end
+                while node is not None:
+                    path.append(node)
+                    node = parent[node]
+                path.reverse()
                 yield ('found', path)
                 return
             
             yield ('visited', current)
+            visited.add(current)
             
             # Get neighbors and pick one randomly
             neighbors = self.get_neighbors(*current, width, height)
@@ -43,8 +52,10 @@ class RandomWalkAlgorithm(PathfindingAlgorithm):
             else:
                 next_node = random.choice(neighbors)  # Random including visited
             
-            visited.add(next_node)
-            path.append(next_node)
+            # Track parent for shortest path reconstruction
+            if next_node not in parent:
+                parent[next_node] = current
+            
             current = next_node
         
         # Couldn't find path in reasonable time
