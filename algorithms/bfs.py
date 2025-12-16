@@ -20,24 +20,17 @@ class BFSAlgorithm(PathfindingAlgorithm):
         visited = {start}
         parent = {start: None}
         
+        # Check if start is end
+        if start == end:
+            yield ('found', [start])
+            return
+        
         # Explore the grid
         while queue:
             current = queue.popleft()
             
             # Yield current state for visualization
             yield ('exploring', current)
-            
-            # Check if we reached the end
-            if current == end:
-                # Reconstruct path
-                path = []
-                node = end
-                while node is not None:
-                    path.append(node)
-                    node = parent[node]
-                path.reverse()
-                yield ('found', path)
-                return
             
             # Mark as visited after exploring
             yield ('visited', current)
@@ -47,6 +40,19 @@ class BFSAlgorithm(PathfindingAlgorithm):
                 if neighbor not in visited:
                     visited.add(neighbor)
                     parent[neighbor] = current
+                    
+                    # Check if we reached the end
+                    if neighbor == end:
+                        # Reconstruct path
+                        path = []
+                        node = end
+                        while node is not None:
+                            path.append(node)
+                            node = parent[node]
+                        path.reverse()
+                        yield ('found', path)
+                        return
+                    
                     queue.append(neighbor)
         
         # No path found

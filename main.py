@@ -160,8 +160,8 @@ def main():
     parser.add_argument('--led-gpio-mapping', default='adafruit-hat', 
                        help='GPIO mapping (adafruit-hat, regular, etc.)')
     parser.add_argument('--led-slowdown-gpio', type=int, default=2,
-                       help='GPIO slowdown (0=no slowdown, 1-4=increasing slowdown)')
-    parser.add_argument('--iterations', type=int, default=4, 
+                       help='GPIO slowdown (0=no slowdown, 1-10=increasing slowdown)')
+    parser.add_argument('--iterations', type=int, default=10, 
                        help='Number of complete cycles through all algorithms')
     parser.add_argument('--delay', type=float, default=0.02,
                        help='Delay between steps (seconds)')
