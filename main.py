@@ -19,6 +19,9 @@ from algorithms.greedy import GreedyBestFirstAlgorithm
 from algorithms.jps import JumpPointSearchAlgorithm
 from algorithms.random_walk import RandomWalkAlgorithm
 
+# Import maze generators
+from maze_generator import generate_random_walls, generate_maze_walls, generate_rooms
+
 
 class PathfindingVisualizer:
     def __init__(self, rows=64, cols=64, hardware_mapping='adafruit-hat', gpio_slowdown=2, 
@@ -50,6 +53,7 @@ class PathfindingVisualizer:
         self.COLOR_EXPLORING = (0, 100, 255)   # Blue (currently exploring)
         self.COLOR_VISITED = (50, 50, 50)      # Dark gray (already visited)
         self.COLOR_PATH = (255, 255, 0)        # Yellow (final path)
+        self.COLOR_WALL = (128, 128, 128)      # Gray (obstacles/walls)
         
         # Animation delay (seconds between steps)
         self.delay = 0.02
@@ -85,13 +89,20 @@ class PathfindingVisualizer:
             if distance > min_distance:
                 return start, end
     
-    def visualize_algorithm(self, algorithm, start, end):
+    def visualize_algorithm(self, algorithm, start, end, obstacles=None):
         """Run and visualize a specific pathfinding algorithm"""
+        if obstacles is None:
+            obstacles = set()
+        
         print(f"\nRunning: {algorithm.name}")
         print(f"Start: {start}, End: {end}")
         
         # Create canvas
         image = self.create_blank_canvas()
+        
+        # Draw obstacles/walls
+        for ox, oy in obstacles:
+            self.draw_pixel(image, ox, oy, self.COLOR_WALL)
         
         # Draw start and end points
         self.draw_pixel(image, start[0], start[1], self.COLOR_START)
@@ -100,30 +111,31 @@ class PathfindingVisualizer:
         time.sleep(1)  # Pause to show start/end
         
         # Run pathfinding algorithm
-        for state_type, data in algorithm.find_path(start, end, self.width, self.height):
+        for state_type, data in algorithm.find_path(start, end, self.width, self.height, obstacles):
             if state_type == 'exploring':
                 x, y = data
-                # Don't overwrite start/end points
-                if (x, y) != start and (x, y) != end:
+                # Don't overwrite start/end points or walls
+                if (x, y) != start and (x, y) != end and (x, y) not in obstacles:
                     self.draw_pixel(image, x, y, self.COLOR_EXPLORING)
                     self.matrix.SetImage(image)
                     time.sleep(self.delay)
             
             elif state_type == 'visited':
                 x, y = data
-                # Don't overwrite start/end points
-                if (x, y) != start and (x, y) != end:
+                # Don't overwrite start/end points or walls
+                if (x, y) != start and (x, y) != end and (x, y) not in obstacles:
                     self.draw_pixel(image, x, y, self.COLOR_VISITED)
                     self.matrix.SetImage(image)
             
             elif state_type == 'found':
                 path = data
                 print(f"Path found! Length: {len(path)} steps")
+                print(f"Path: {path[:10]}..." if len(path) > 10 else f"Path: {path}")
                 
                 # Animate the final path
                 time.sleep(0.5)
                 for x, y in path:
-                    if (x, y) != start and (x, y) != end:
+                    if (x, y) != start and (x, y) != end and (x, y) not in obstacles:
                         self.draw_pixel(image, x, y, self.COLOR_PATH)
                         self.matrix.SetImage(image)
                         time.sleep(self.delay * 2)
@@ -137,11 +149,12 @@ class PathfindingVisualizer:
                 time.sleep(2)
                 return False
     
-    def run(self, iterations=1):
+    def run(self, iterations=1, maze_type='none'):
         """Run pathfinding visualizations for all algorithms"""
         try:
             print("Starting Pathfinding Visualizer...")
             print(f"Algorithms: {', '.join(algo.name for algo in self.algorithms)}")
+            print(f"Maze type: {maze_type}")
             print("Press CTRL-C to stop")
             
             for iteration in range(iterations):
@@ -149,16 +162,35 @@ class PathfindingVisualizer:
                 print(f"Iteration {iteration + 1}/{iterations}")
                 print('='*50)
                 
-                # Generate new random points for this iteration
-                start, end = self.generate_random_points()
+                # Generate obstacles based on maze type
+                obstacles = set()
+                if maze_type == 'random':
+                    obstacles = generate_random_walls(self.width, self.height, density=0.2)
+                elif maze_type == 'walls':
+                    obstacles = generate_maze_walls(self.width, self.height, wall_length=8, num_walls=12)
+                elif maze_type == 'rooms':
+                    obstacles = generate_rooms(self.width, self.height, num_rooms=3)
+                
+                # Generate random points that avoid obstacles
+                while True:
+                    start, end = self.generate_random_points()
+                    if start not in obstacles and end not in obstacles:
+                        break
+                
+                # Update obstacles to keep areas around start/end clear
+                if maze_type != 'none':
+                    for dx in range(-1, 2):
+                        for dy in range(-1, 2):
+                            obstacles.discard((start[0] + dx, start[1] + dy))
+                            obstacles.discard((end[0] + dx, end[1] + dy))
                 
                 # Randomize algorithm order for each iteration
                 shuffled_algorithms = self.algorithms.copy()
                 random.shuffle(shuffled_algorithms)
                 
-                # Run each algorithm with the same start/end points
+                # Run each algorithm with the same start/end points and obstacles
                 for algorithm in shuffled_algorithms:
-                    self.visualize_algorithm(algorithm, start, end)
+                    self.visualize_algorithm(algorithm, start, end, obstacles)
                     time.sleep(1)  # Pause between algorithms
                 
                 time.sleep(2)  # Pause between iterations
@@ -191,6 +223,9 @@ def main():
                        help='Number of complete cycles through all algorithms')
     parser.add_argument('--delay', type=float, default=0.02,
                        help='Delay between steps (seconds)')
+    parser.add_argument('--maze', type=str, default='none',
+                       choices=['none', 'random', 'walls', 'rooms'],
+                       help='Maze/obstacle type: none (empty grid), random (scattered walls), walls (maze-like), rooms (rectangular rooms)')
     
     args = parser.parse_args()
     
@@ -206,7 +241,7 @@ def main():
     )
     
     visualizer.delay = args.delay
-    visualizer.run(iterations=args.iterations)
+    visualizer.run(iterations=args.iterations, maze_type=args.maze)
 
 
 if __name__ == "__main__":
