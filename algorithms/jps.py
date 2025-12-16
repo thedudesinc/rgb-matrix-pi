@@ -33,13 +33,8 @@ class JumpPointSearchAlgorithm(PathfindingAlgorithm):
             yield ('exploring', current)
             
             if current == end:
-                # Reconstruct path
-                path = []
-                node = end
-                while node is not None:
-                    path.append(node)
-                    node = parent[node]
-                path.reverse()
+                # Reconstruct path with all intermediate steps
+                path = self._reconstruct_full_path(end, parent)
                 yield ('found', path)
                 return
             
@@ -94,3 +89,44 @@ class JumpPointSearchAlgorithm(PathfindingAlgorithm):
                 return next_node
         
         return next_node
+    
+    def _reconstruct_full_path(self, end, parent):
+        """
+        Reconstruct the complete path including all intermediate steps between jump points
+        """
+        # First get the jump points path
+        jump_path = []
+        node = end
+        while node is not None:
+            jump_path.append(node)
+            node = parent[node]
+        jump_path.reverse()
+        
+        # Now fill in all intermediate steps between jump points
+        full_path = []
+        for i in range(len(jump_path) - 1):
+            current = jump_path[i]
+            next_point = jump_path[i + 1]
+            
+            # Add current point
+            full_path.append(current)
+            
+            # Fill in intermediate steps
+            x, y = current
+            nx, ny = next_point
+            
+            # Determine direction
+            dx = 0 if nx == x else (1 if nx > x else -1)
+            dy = 0 if ny == y else (1 if ny > y else -1)
+            
+            # Add all intermediate points
+            while (x, y) != next_point:
+                x += dx
+                y += dy
+                if (x, y) != next_point:
+                    full_path.append((x, y))
+        
+        # Add the final point
+        full_path.append(jump_path[-1])
+        
+        return full_path
