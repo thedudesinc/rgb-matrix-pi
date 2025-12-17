@@ -31,8 +31,8 @@ class ClockDisplay:
                     break
             try:
                 if font_path:
-                    # time font large, date smaller
-                    self.time_font = ImageFont.truetype(font_path, size=max(8, int(self.height * 0.45)))
+                    # make time a bit smaller so it fits nicer, keep date readable
+                    self.time_font = ImageFont.truetype(font_path, size=max(8, int(self.height * 0.32)))
                     self.date_font = ImageFont.truetype(font_path, size=max(8, int(self.height * 0.18)))
                 else:
                     # fallback to default bitmap font
@@ -67,17 +67,20 @@ class ClockDisplay:
                     except Exception:
                         return (len(txt) * 6, 8)
 
-        # time centered near top, date centered below
+        # time centered a bit higher, date offset artistically to the right and spaced down
         tf = self.time_font
         df = self.date_font
         w, h = _text_size(timestr, tf)
         time_x = (self.width - w) // 2
-        time_y = max(0, (self.height - h) // 2 - int(self.height * 0.12))
+        # push time up slightly so there's room for an offset date below
+        time_y = max(0, (self.height - h) // 2 - int(self.height * 0.18))
         draw.text((time_x, time_y), timestr, fill=(255, 255, 0), font=tf)
 
         w2, h2 = _text_size(datestr, df)
-        date_x = (self.width - w2) // 2
-        date_y = time_x + h + 4 if False else time_y + h + 4
+        # offset date to the right and a bit lower for an artistic touch
+        offset_x = int(self.width * 0.08)
+        date_x = min(self.width - w2 - 1, time_x + offset_x)
+        date_y = time_y + h + int(self.height * 0.06)
         draw.text((date_x, date_y), datestr, fill=(0, 255, 255), font=df)
 
         return img
