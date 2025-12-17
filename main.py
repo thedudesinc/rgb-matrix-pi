@@ -5,10 +5,17 @@ Runs multiple pathfinding algorithms in sequence
 """
 
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import time
 import random
 import argparse
+import threading
+import queue
+import os
+
+from input_listener import InputListener
+from clock import ClockDisplay
+from snake import SnakeGame
 
 # Import pathfinding algorithms
 from algorithms.bfs import BFSAlgorithm
@@ -92,7 +99,7 @@ class PathfindingVisualizer:
             if distance > min_distance:
                 return start, end
     
-    def visualize_algorithm(self, algorithm, start, end, obstacles=None):
+    def visualize_algorithm(self, algorithm, start, end, obstacles=None, stop_event=None):
         """Run and visualize a specific pathfinding algorithm"""
         if obstacles is None:
             obstacles = set()
@@ -116,6 +123,9 @@ class PathfindingVisualizer:
         
         # Run pathfinding algorithm
         for state_type, data in algorithm.find_path(start, end, self.width, self.height, obstacles):
+            if stop_event is not None and stop_event.is_set():
+                print(f"Stopping algorithm '{algorithm.name}' due to mode change")
+                return False
             if state_type == 'exploring':
                 x, y = data
                 # Don't overwrite start/end points or walls
@@ -216,6 +226,125 @@ class PathfindingVisualizer:
             self.matrix.Clear()
 
 
+def run_clock_mode(matrix, input_listener, stop_event):
+    """Simple clock mode that draws time and date"""
+    try:
+        font = ImageFont.load_default()
+    except Exception:
+        font = None
+
+    while not stop_event.is_set():
+        now = time.localtime()
+        timestr = time.strftime('%H:%M:%S', now)
+        datestr = time.strftime('%Y-%m-%d', now)
+
+        img = Image.new('RGB', (matrix.width, matrix.height), (0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        # center time
+        w, h = draw.textsize(timestr, font=font)
+        draw.text(((matrix.width - w)//2, (matrix.height - h)//2 - 8), timestr, fill=(255,255,0), font=font)
+        w2, h2 = draw.textsize(datestr, font=font)
+        draw.text(((matrix.width - w2)//2, (matrix.height - h2)//2 + 12), datestr, fill=(0,255,255), font=font)
+
+        matrix.SetImage(img)
+
+        # check for mode-switch holding handled externally
+        for _ in range(10):
+            if stop_event.is_set():
+                break
+            time.sleep(0.1)
+
+
+class SnakeGame:
+    def __init__(self, matrix, grid_size=32):
+        self.matrix = matrix
+        self.grid = grid_size
+        self.cell_w = matrix.width // self.grid
+        self.cell_h = matrix.height // self.grid
+        self.reset()
+
+    def reset(self):
+        self.snake = [(self.grid//2, self.grid//2 + i) for i in range(3)]
+        self.direction = (0, -1)
+        self.place_food()
+        self.alive = True
+        self.score = 0
+
+    def place_food(self):
+        import random
+        while True:
+            fx = random.randint(0, self.grid-1)
+            fy = random.randint(0, self.grid-1)
+            if (fx, fy) not in self.snake:
+                self.food = (fx, fy)
+                break
+
+    def step(self, input_listener):
+        # update direction from input
+        if input_listener.is_pressed('up') and self.direction != (0,1):
+            self.direction = (0, -1)
+        elif input_listener.is_pressed('down') and self.direction != (0,-1):
+            self.direction = (0, 1)
+        elif input_listener.is_pressed('left') and self.direction != (1,0):
+            self.direction = (-1, 0)
+        elif input_listener.is_pressed('right') and self.direction != (-1,0):
+            self.direction = (1, 0)
+
+        head = self.snake[0]
+        new_head = ((head[0] + self.direction[0]) % self.grid, (head[1] + self.direction[1]) % self.grid)
+        if new_head in self.snake:
+            self.alive = False
+            return
+        self.snake.insert(0, new_head)
+        if new_head == self.food:
+            self.score += 1
+            self.place_food()
+        else:
+            self.snake.pop()
+
+    def render(self):
+        img = Image.new('RGB', (self.matrix.width, self.matrix.height), (0,0,0))
+        for x,y in self.snake:
+            for dx in range(self.cell_w):
+                for dy in range(self.cell_h):
+                    px = x * self.cell_w + dx
+                    py = y * self.cell_h + dy
+                    if 0 <= px < self.matrix.width and 0 <= py < self.matrix.height:
+                        img.putpixel((px, py), (0,255,0))
+        # food
+        fx, fy = self.food
+        for dx in range(self.cell_w):
+            for dy in range(self.cell_h):
+                px = fx * self.cell_w + dx
+                py = fy * self.cell_h + dy
+                if 0 <= px < self.matrix.width and 0 <= py < self.matrix.height:
+                    img.putpixel((px, py), (255,0,0))
+        return img
+
+def run_snake_mode(matrix, input_listener, stop_event, grid_size=32):
+    game = SnakeGame(matrix, grid_size=grid_size)
+    tick = 0.2
+    while not stop_event.is_set():
+        if not game.alive:
+            # show score and reset after short pause
+            img = Image.new('RGB', (matrix.width, matrix.height), (0,0,0))
+            draw = ImageDraw.Draw(img)
+            msg = f'Score:{game.score}'
+            draw.text((2, matrix.height//2-4), msg, fill=(255,255,0))
+            matrix.SetImage(img)
+            time.sleep(2)
+            game.reset()
+            continue
+
+        game.step(input_listener)
+        matrix.SetImage(game.render())
+        for _ in range(int(tick/0.05)):
+            if stop_event.is_set():
+                break
+            time.sleep(0.05)
+
+
+
 def main():
     parser = argparse.ArgumentParser(description='Pathfinding Algorithm Visualizer')
     parser.add_argument('--led-rows', type=int, default=64, help='Matrix rows')
@@ -239,6 +368,12 @@ def main():
     parser.add_argument('--maze', type=str, default='alternate',
                        choices=['none', 'random', 'walls', 'rooms', 'alternate'],
                        help='Maze/obstacle type: none (empty grid), random (scattered walls), walls (maze-like), rooms (rectangular rooms), alternate (cycles through all types)')
+    parser.add_argument('--input-device', type=str, default=None,
+                       help='Path to evdev device (e.g. /dev/input/event0). If omitted, first keyboard-like device is used')
+    parser.add_argument('--initial-mode', type=str, default='clock', choices=['clock', 'visualizer', 'snake'],
+                       help='Initial mode to start in')
+    parser.add_argument('--snake-grid', type=int, default=32,
+                       help='Logical grid size for snake (default 32 => 2x2 pixels per cell on 64x64)')
     
     args = parser.parse_args()
     
@@ -251,11 +386,140 @@ def main():
         brightness=args.led_brightness,
         limit_refresh_rate=args.led_limit_refresh,
         disable_hardware_pulsing=args.led_no_hardware_pulse,
-        
     )
-    
+
     visualizer.delay = args.delay
-    visualizer.run(iterations=args.iterations, maze_type=args.maze)
+
+    # Input listener for the tiny USB keyboard
+    input_listener = InputListener(device_path=args.input_device)
+    try:
+        input_listener.start()
+    except Exception as e:
+        print(f"Warning: input listener could not start: {e}")
+
+
+    current_mode = args.initial_mode
+    mode_thread = None
+    mode_stop = None
+
+    def start_mode(mode_name):
+        nonlocal mode_thread, mode_stop
+        mode_stop = threading.Event()
+        if mode_name == 'clock':
+            # clock display uses ClockDisplay class
+            clock_disp = ClockDisplay(visualizer.width, visualizer.height)
+            def clock_runner():
+                while not mode_stop.is_set():
+                    visualizer.matrix.SetImage(clock_disp.render())
+                    for _ in range(10):
+                        if mode_stop.is_set():
+                            break
+                        time.sleep(0.1)
+
+            mode_thread = threading.Thread(target=clock_runner, daemon=True)
+        elif mode_name == 'snake':
+            # snake game uses SnakeGame class
+            def snake_runner():
+                game = SnakeGame(visualizer.matrix, grid_size=args.snake_grid)
+                tick = 0.2
+                while not mode_stop.is_set():
+                    if not game.alive:
+                        img = Image.new('RGB', (visualizer.width, visualizer.height), (0,0,0))
+                        draw = ImageDraw.Draw(img)
+                        msg = f'Score:{game.score}'
+                        draw.text((2, visualizer.height//2-4), msg, fill=(255,255,0))
+                        visualizer.matrix.SetImage(img)
+                        time.sleep(2)
+                        game.reset()
+                        continue
+
+                    game.step(input_listener)
+                    visualizer.matrix.SetImage(game.render())
+                    for _ in range(int(tick/0.05)):
+                        if mode_stop.is_set():
+                            break
+                        time.sleep(0.05)
+
+            mode_thread = threading.Thread(target=snake_runner, daemon=True)
+        elif mode_name == 'visualizer':
+            def vis_runner():
+                # run visualizer until stop
+                maze_types = ['random', 'walls', 'rooms']
+                maze_index = 0
+                while not mode_stop.is_set():
+                    start_pt, end_pt = visualizer.generate_random_points()
+                    # generate obstacles per current maze (use --maze arg)
+                    current_maze_type = args.maze
+                    if current_maze_type == 'alternate':
+                        current_maze_type = maze_types[maze_index % len(maze_types)]
+                        maze_index += 1
+                    obstacles = set()
+                    if current_maze_type == 'random':
+                        obstacles = generate_random_walls(visualizer.width, visualizer.height, density=0.2)
+                    elif current_maze_type == 'walls':
+                        obstacles = generate_maze_walls(visualizer.width, visualizer.height, wall_length=10, num_walls=20)
+                    elif current_maze_type == 'rooms':
+                        obstacles = generate_rooms(visualizer.width, visualizer.height, num_rooms=6)
+                    # ensure start/end clear
+                    for dx in range(-1,2):
+                        for dy in range(-1,2):
+                            obstacles.discard((start_pt[0]+dx, start_pt[1]+dy))
+                            obstacles.discard((end_pt[0]+dx, end_pt[1]+dy))
+
+                    # run each algorithm (interruptible via stop_event)
+                    shuffled = visualizer.algorithms.copy()
+                    random.shuffle(shuffled)
+                    for alg in shuffled:
+                        if mode_stop.is_set():
+                            return
+                        visualizer.visualize_algorithm(alg, start_pt, end_pt, obstacles, stop_event=mode_stop)
+                        time.sleep(1)
+                    time.sleep(2)
+
+            mode_thread = threading.Thread(target=vis_runner, daemon=True)
+        mode_thread.start()
+
+    # start initial mode
+    start_mode(current_mode)
+
+    try:
+        # monitor for mode-switch: hold left+right for 5 seconds
+        hold_required = 5.0
+        while True:
+            left = input_listener.pressed_duration('left')
+            right = input_listener.pressed_duration('right')
+            if left >= hold_required and right >= hold_required:
+                # switch mode
+                print('Mode switch requested')
+                # stop current mode
+                if mode_stop:
+                    mode_stop.set()
+                if mode_thread:
+                    mode_thread.join(timeout=1.0)
+
+                # cycle modes
+                modes = ['clock', 'visualizer', 'snake']
+                idx = modes.index(current_mode)
+                current_mode = modes[(idx + 1) % len(modes)]
+                print(f'Entering mode: {current_mode}')
+                start_mode(current_mode)
+                # wait a bit to avoid immediate re-trigger
+                time.sleep(1.0)
+
+            time.sleep(0.1)
+
+    except KeyboardInterrupt:
+        print('Exiting')
+    finally:
+        if mode_stop:
+            mode_stop.set()
+        if mode_thread:
+            mode_thread.join(timeout=1.0)
+        try:
+            input_listener.stop()
+        except Exception:
+            pass
+        visualizer.matrix.Clear()
 
 
 if __name__ == "__main__":
