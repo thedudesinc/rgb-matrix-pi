@@ -23,7 +23,7 @@ class InputListener:
         'KEY_RIGHT': 'right'
     }
 
-    def __init__(self, device_path=None):
+    def __init__(self, device_path=None, grab=False):
         self.device_path = device_path
         self.device = None
         self.thread = None
@@ -33,13 +33,34 @@ class InputListener:
         self.key_states = {'up': False, 'down': False, 'left': False, 'right': False}
         # key -> last press timestamp
         self.key_press_time = {'up': 0.0, 'down': 0.0, 'left': 0.0, 'right': 0.0}
+        self.grab = grab
+        # prepare numeric code map for variants (keypad arrows etc.)
+        self.KEY_CODE_MAP = {}
+        try:
+            # main arrow keys
+            self.KEY_CODE_MAP[ecodes.KEY_UP] = 'up'
+            self.KEY_CODE_MAP[ecodes.KEY_DOWN] = 'down'
+            self.KEY_CODE_MAP[ecodes.KEY_LEFT] = 'left'
+            self.KEY_CODE_MAP[ecodes.KEY_RIGHT] = 'right'
+        except Exception:
+            pass
+        # some keyboards send keypad arrows - map common variants if present
+        try:
+            self.KEY_CODE_MAP[ecodes.KEY_KP8] = 'up'
+            self.KEY_CODE_MAP[ecodes.KEY_KP2] = 'down'
+            self.KEY_CODE_MAP[ecodes.KEY_KP4] = 'left'
+            self.KEY_CODE_MAP[ecodes.KEY_KP6] = 'right'
+        except Exception:
+            pass
 
     def _find_device(self):
         if self.device_path:
             try:
-                return InputDevice(self.device_path)
-            except Exception:
-                return None
+                dev = InputDevice(self.device_path)
+                return dev
+            except Exception as e:
+                # raise informative error to caller
+                raise RuntimeError(f"Failed to open input device '{self.device_path}': {e}")
 
         # try to pick first device that looks like a keyboard
         if list_devices is None:
@@ -59,10 +80,30 @@ class InputListener:
     def start(self):
         if InputDevice is None:
             raise RuntimeError('evdev is not available; install python-evdev')
-
+        # Attempt to find/open the device; let _find_device raise helpful errors
         self.device = self._find_device()
+
         if not self.device:
-            raise RuntimeError(f'No input device found (tried: {self.device_path})')
+            # list available devices for debugging
+            devs = list_devices() if list_devices is not None else []
+            names = []
+            for d in devs:
+                try:
+                    names.append((d, InputDevice(d).name))
+                except Exception:
+                    names.append((d, '<unreadable>'))
+            raise RuntimeError(f'No input device found (tried: {self.device_path}). Available: {names}')
+
+        # optionally grab the device exclusively
+        try:
+            if self.grab:
+                try:
+                    self.device.grab()
+                except Exception:
+                    # non-fatal; continue without exclusive grab
+                    pass
+        except Exception:
+            pass
 
         self.running = True
         self.thread = threading.Thread(target=self._run, daemon=True)
@@ -81,9 +122,22 @@ class InputListener:
             if not self.running:
                 break
             if ev.type == ecodes.EV_KEY:
-                keyname = ecodes.KEY[ev.code]
-                if keyname in self.KEY_MAP:
-                    key = self.KEY_MAP[keyname]
+                # prefer numeric code mapping (handles variants)
+                key = None
+                try:
+                    key = self.KEY_CODE_MAP.get(ev.code)
+                except Exception:
+                    key = None
+
+                # fallback to name-based mapping for completeness
+                if key is None:
+                    try:
+                        keyname = ecodes.KEY[ev.code]
+                        key = self.KEY_MAP.get(keyname)
+                    except Exception:
+                        key = None
+
+                if key:
                     # ev.value: 1=down, 0=up, 2=hold/repeat
                     is_down = ev.value == 1 or ev.value == 2
                     self.key_states[key] = is_down

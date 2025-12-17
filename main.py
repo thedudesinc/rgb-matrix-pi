@@ -253,6 +253,8 @@ def main():
                        help='Maze/obstacle type: none (empty grid), random (scattered walls), walls (maze-like), rooms (rectangular rooms), alternate (cycles through all types)')
     parser.add_argument('--input-device', type=str, default=None,
                        help='Path to evdev device (e.g. /dev/input/event0). If omitted, first keyboard-like device is used')
+    parser.add_argument('--grab-input', action='store_true',
+                       help='Try to grab the input device exclusively (may require root)')
     parser.add_argument('--initial-mode', type=str, default='clock', choices=['clock', 'visualizer', 'snake'],
                        help='Initial mode to start in')
     parser.add_argument('--snake-grid', type=int, default=32,
@@ -274,7 +276,7 @@ def main():
     visualizer.delay = args.delay
 
     # Input listener for the tiny USB keyboard
-    input_listener = InputListener(device_path=args.input_device)
+    input_listener = InputListener(device_path=args.input_device, grab=args.grab_input)
     try:
         input_listener.start()
     except Exception as e:
