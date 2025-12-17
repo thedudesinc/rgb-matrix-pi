@@ -46,6 +46,12 @@ class PathfindingVisualizer:
         self.matrix = RGBMatrix(options=options)
         self.width = self.matrix.width
         self.height = self.matrix.height
+        # Offscreen frame canvas (use SwapOnVSync when available to reduce tearing)
+        try:
+            self.offscreen_canvas = self.matrix.CreateFrameCanvas()
+        except Exception:
+            # Some bindings/hardware might not support frame canvas; fall back to SetImage
+            self.offscreen_canvas = None
 
         # Display throttling (max SetImage calls per second)
         self.update_rate = max_updates_per_sec if max_updates_per_sec and max_updates_per_sec > 0 else 60
@@ -88,6 +94,22 @@ class PathfindingVisualizer:
         Use `force=True` for immediate important frames (start/end/final path steps).
         """
         if force:
+            # Try using offscreen canvas + SwapOnVSync for atomic VSync update
+            if self.offscreen_canvas is not None:
+                try:
+                    self.offscreen_canvas.SetImage(image)
+                    # Swap returns a new canvas on some bindings
+                    self.offscreen_canvas = self.matrix.SwapOnVSync(self.offscreen_canvas)
+                    self._last_update_time = time.time()
+                    return
+                except AttributeError:
+                    # SwapOnVSync not available; fall back
+                    pass
+                except Exception:
+                    # Any other canvas error: fall back
+                    pass
+
+            # Fallback to direct SetImage
             self.matrix.SetImage(image)
             self._last_update_time = time.time()
             return
@@ -95,6 +117,20 @@ class PathfindingVisualizer:
         now = time.time()
         min_interval = 1.0 / float(self.update_rate)
         if now - self._last_update_time >= min_interval:
+            if self.offscreen_canvas is not None:
+                try:
+                    self.offscreen_canvas.SetImage(image)
+                    self.offscreen_canvas = self.matrix.SwapOnVSync(self.offscreen_canvas)
+                    self._last_update_time = now
+                    return
+                except AttributeError:
+                    # SwapOnVSync not available; fall back
+                    pass
+                except Exception:
+                    # Any other canvas error: fall back
+                    pass
+
+            # Fallback to direct SetImage
             self.matrix.SetImage(image)
             self._last_update_time = now
     
