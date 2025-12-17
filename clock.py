@@ -44,8 +44,8 @@ class ClockDisplay:
 
     def render(self):
         now = time.localtime()
-        # 12-hour format without seconds, remove leading zero (e.g., '1:23 PM')
-        timestr = time.strftime('%I:%M %p', now).lstrip('0')
+        # 12-hour format without seconds, remove leading zero (e.g., '1:23')
+        timestr = time.strftime('%I:%M', now).lstrip('0')
         # Show date as 'DEC 14' (month abbrev uppercase + day)
         month = time.strftime('%b', now).upper()
         day = str(int(time.strftime('%d', now)))
@@ -73,14 +73,15 @@ class ClockDisplay:
         w, h = _text_size(timestr, tf)
         time_x = (self.width - w) // 2
         # push time up slightly so there's room for an offset date below
-        time_y = max(0, (self.height - h) // 2 - int(self.height * 0.18))
+        time_y = max(0, (self.height - h) // 2 - int(self.height * 0.22))
         draw.text((time_x, time_y), timestr, fill=(255, 255, 0), font=tf)
 
         w2, h2 = _text_size(datestr, df)
         # offset date to the right and a bit lower for an artistic touch
         offset_x = int(self.width * 0.08)
         date_x = min(self.width - w2 - 1, time_x + offset_x)
-        date_y = time_y + h + int(self.height * 0.06)
+        # ensure date doesn't go off the bottom
+        date_y = min(self.height - h2 - 1, time_y + h + int(self.height * 0.06))
         draw.text((date_x, date_y), datestr, fill=(0, 255, 255), font=df)
 
         return img
