@@ -25,7 +25,8 @@ from maze_generator import generate_random_walls, generate_maze_walls, generate_
 
 class PathfindingVisualizer:
     def __init__(self, rows=64, cols=64, hardware_mapping='adafruit-hat', gpio_slowdown=2, 
-                 pwm_bits=11, brightness=100, limit_refresh_rate=0, disable_hardware_pulsing=False):
+                 pwm_bits=11, brightness=100, limit_refresh_rate=0, disable_hardware_pulsing=False,
+                 max_updates_per_sec=60):
         # Matrix configuration
         options = RGBMatrixOptions()
         options.rows = rows
@@ -45,6 +46,10 @@ class PathfindingVisualizer:
         self.matrix = RGBMatrix(options=options)
         self.width = self.matrix.width
         self.height = self.matrix.height
+
+        # Display throttling (max SetImage calls per second)
+        self.update_rate = max_updates_per_sec if max_updates_per_sec and max_updates_per_sec > 0 else 60
+        self._last_update_time = 0.0
         
         # Colors
         self.COLOR_BACKGROUND = (0, 0, 0)      # Black
@@ -77,6 +82,21 @@ class PathfindingVisualizer:
         """Draw a single pixel on the canvas"""
         if 0 <= x < self.width and 0 <= y < self.height:
             image.putpixel((x, y), color)
+
+    def maybe_update_display(self, image, force=False):
+        """Update the physical display at most `self.update_rate` times per second.
+        Use `force=True` for immediate important frames (start/end/final path steps).
+        """
+        if force:
+            self.matrix.SetImage(image)
+            self._last_update_time = time.time()
+            return
+
+        now = time.time()
+        min_interval = 1.0 / float(self.update_rate)
+        if now - self._last_update_time >= min_interval:
+            self.matrix.SetImage(image)
+            self._last_update_time = now
     
     def generate_random_points(self, min_distance=20):
         """Generate random start and end points with minimum distance"""
@@ -107,7 +127,8 @@ class PathfindingVisualizer:
         # Draw start and end points
         self.draw_pixel(image, start[0], start[1], self.COLOR_START)
         self.draw_pixel(image, end[0], end[1], self.COLOR_END)
-        self.matrix.SetImage(image)
+        # Force an immediate display of start/end
+        self.maybe_update_display(image, force=True)
         time.sleep(1)  # Pause to show start/end
         
         # Run pathfinding algorithm
@@ -117,7 +138,7 @@ class PathfindingVisualizer:
                 # Don't overwrite start/end points or walls
                 if (x, y) != start and (x, y) != end and (x, y) not in obstacles:
                     self.draw_pixel(image, x, y, self.COLOR_EXPLORING)
-                    self.matrix.SetImage(image)
+                    self.maybe_update_display(image)
                     time.sleep(self.delay)
             
             elif state_type == 'visited':
@@ -125,7 +146,7 @@ class PathfindingVisualizer:
                 # Don't overwrite start/end points or walls
                 if (x, y) != start and (x, y) != end and (x, y) not in obstacles:
                     self.draw_pixel(image, x, y, self.COLOR_VISITED)
-                    self.matrix.SetImage(image)
+                    self.maybe_update_display(image)
             
             elif state_type == 'found':
                 path = data
@@ -137,7 +158,8 @@ class PathfindingVisualizer:
                 for x, y in path:
                     if (x, y) != start and (x, y) != end and (x, y) not in obstacles:
                         self.draw_pixel(image, x, y, self.COLOR_PATH)
-                        self.matrix.SetImage(image)
+                        # Force display updates for final path animation
+                        self.maybe_update_display(image, force=True)
                         time.sleep(self.delay * 2)
                 
                 # Keep final result visible
@@ -234,6 +256,8 @@ def main():
     parser.add_argument('--maze', type=str, default='alternate',
                        choices=['none', 'random', 'walls', 'rooms', 'alternate'],
                        help='Maze/obstacle type: none (empty grid), random (scattered walls), walls (maze-like), rooms (rectangular rooms), alternate (cycles through all types)')
+    parser.add_argument('--max-updates-per-sec', type=int, default=60,
+                       help='Maximum display updates per second (throttles SetImage calls)')
     
     args = parser.parse_args()
     
@@ -245,7 +269,8 @@ def main():
         pwm_bits=args.led_pwm_bits,
         brightness=args.led_brightness,
         limit_refresh_rate=args.led_limit_refresh,
-        disable_hardware_pulsing=args.led_no_hardware_pulse
+        disable_hardware_pulsing=args.led_no_hardware_pulse,
+        max_updates_per_sec=args.max_updates_per_sec
     )
     
     visualizer.delay = args.delay
