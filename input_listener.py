@@ -3,6 +3,10 @@ import queue
 import time
 import os
 import traceback
+import logging
+
+log = logging.getLogger('input_listener')
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(name)s %(levelname)s: %(message)s')
 
 try:
     from evdev import InputDevice, list_devices, ecodes
@@ -86,6 +90,7 @@ class InputListener:
         try:
             self.device = self._find_device()
         except Exception as e:
+            log.error('Failed to find device: %s', e)
             # gather runtime diagnostics to help debug permission / path issues
             uid = os.geteuid()
             gid = os.getegid()
@@ -125,13 +130,17 @@ class InputListener:
                     names.append((d, '<unreadable>'))
             raise RuntimeError(f'No input device found (tried: {self.device_path}). Available: {names}')
 
+        log.info('Evdev device opened: %s', self.device.name)
+
         # optionally grab the device exclusively
         try:
             if self.grab:
                 try:
                     self.device.grab()
-                except Exception:
+                    log.info('Device grabbed exclusively')
+                except Exception as e:
                     # non-fatal; continue without exclusive grab
+                    log.warning('Could not grab device exclusively: %s', e)
                     pass
         except Exception:
             pass
@@ -149,10 +158,12 @@ class InputListener:
             pass
 
     def _run(self):
+        log.info('Evdev read loop starting')
         for ev in self.device.read_loop():
             if not self.running:
                 break
             if ev.type == ecodes.EV_KEY:
+                log.debug('Raw evdev event: code=%s value=%s', ev.code, ev.value)
                 # prefer numeric code mapping (handles variants)
                 key = None
                 try:
@@ -169,6 +180,7 @@ class InputListener:
                         key = None
 
                 if key:
+                    log.info('Evdev event mapped: key=%s down=%s', key, ev.value in (1, 2))
                     # ev.value: 1=down, 0=up, 2=hold/repeat
                     is_down = ev.value == 1 or ev.value == 2
                     self.key_states[key] = is_down
