@@ -14,8 +14,7 @@ import queue
 import os
 import logging
 
-from hid_listener import HIDListener as HIDInputListener
-from input_listener import InputListener as EvdevInputListener
+from stdin_listener import StdinListener as InputListener
 from clock import ClockDisplay
 from snake import SnakeGame
 
@@ -260,20 +259,6 @@ def main():
                        help='Initial mode to start in')
     parser.add_argument('--snake-grid', type=int, default=32,
                        help='Logical grid size for snake (default 32 => 2x2 pixels per cell on 64x64)')
-    parser.add_argument('--hid-vid', type=str, default=None,
-                       help='HID vendor id (hex like 0x046d or decimal)')
-    parser.add_argument('--hid-pid', type=str, default=None,
-                       help='HID product id (hex like 0xc52b or decimal)')
-    parser.add_argument('--hid-path', type=str, default=None,
-                       help='HID device path (optional, e.g. /dev/hidraw0)')
-    parser.add_argument('--hid-debug', action='store_true',
-                       help='Log raw HID reports and key events for debugging')
-    parser.add_argument('--input-backend', type=str, default='hid', choices=['hid','evdev'],
-                       help='Input backend: hid (hidapi on /dev/hidraw*) or evdev (/dev/input/event*)')
-    parser.add_argument('--evdev-device', type=str, default=None,
-                       help='evdev device path (e.g. /dev/input/event6)')
-    parser.add_argument('--evdev-grab', action='store_true',
-                       help='Grab evdev device exclusively (may block other consumers)')
     
     args = parser.parse_args()
     
@@ -290,36 +275,13 @@ def main():
 
     visualizer.delay = args.delay
 
-    # Input listener for the tiny USB keyboard (hidapi)
-    # parse vid/pid
-    vid = None
-    pid = None
-    if args.hid_vid:
-        try:
-            vid = int(args.hid_vid, 0)
-        except Exception:
-            vid = int(args.hid_vid)
-    if args.hid_pid:
-        try:
-            pid = int(args.hid_pid, 0)
-        except Exception:
-            pid = int(args.hid_pid)
-
-    # Choose input backend
-    if args.input_backend == 'evdev':
-        log.info('Using evdev backend%s', f" on {args.evdev_device}" if args.evdev_device else '')
-        input_listener = EvdevInputListener(device_path=args.evdev_device, grab=args.evdev_grab)
-        try:
-            input_listener.start()
-        except Exception as e:
-            log.error('Evdev input listener could not start: %s', e)
-    else:
-        log.info('Using HID backend%s', f" (vid={args.hid_vid}, pid={args.hid_pid}, path={args.hid_path})" )
-        input_listener = HIDInputListener(vid=vid, pid=pid, device_path=args.hid_path, debug_raw=args.hid_debug)
-        try:
-            input_listener.start()
-        except Exception as e:
-            log.error("HID input listener could not start: %s", e)
+    # Input listener (reads arrow keys from stdin)
+    log.info('Starting stdin input listener (use arrow keys)')
+    input_listener = InputListener()
+    try:
+        input_listener.start()
+    except Exception as e:
+        log.error('Input listener could not start: %s', e)
 
     # start a background thread to log incoming raw events for debugging
     def _drain_events():
@@ -423,30 +385,45 @@ def main():
     start_mode(current_mode)
 
     try:
-        # monitor for mode-switch: hold left+right for 5 seconds
-        hold_required = 5.0
+        # Monitor for mode-switch: press UP 3 times within 2 seconds
+        up_press_times = []
+        last_event_time = 0
+        
         while True:
-            left = input_listener.pressed_duration('left')
-            right = input_listener.pressed_duration('right')
-            if left >= hold_required and right >= hold_required:
-                # switch mode
-                print('Mode switch requested')
-                # stop current mode
-                if mode_stop:
-                    mode_stop.set()
-                if mode_thread:
-                    mode_thread.join(timeout=1.0)
+            evt = input_listener.get_event(timeout=0.1)
+            if evt:
+                key, is_down, ts = evt
+                last_event_time = ts
+                
+                # Detect UP key press (down event)
+                if key == 'up' and is_down:
+                    # Clean old presses (older than 2 seconds)
+                    up_press_times = [t for t in up_press_times if ts - t < 2.0]
+                    up_press_times.append(ts)
+                    
+                    log.info('UP press count: %d', len(up_press_times))
+                    
+                    # If 3 presses within 2 seconds, switch mode
+                    if len(up_press_times) >= 3:
+                        log.info('Mode switch triggered!')
+                        up_press_times.clear()
+                        
+                        # stop current mode
+                        if mode_stop:
+                            mode_stop.set()
+                        if mode_thread:
+                            mode_thread.join(timeout=1.0)
 
-                # cycle modes
-                modes = ['clock', 'visualizer', 'snake']
-                idx = modes.index(current_mode)
-                current_mode = modes[(idx + 1) % len(modes)]
-                print(f'Entering mode: {current_mode}')
-                start_mode(current_mode)
-                # wait a bit to avoid immediate re-trigger
-                time.sleep(1.0)
+                        # cycle modes
+                        modes = ['clock', 'visualizer', 'snake']
+                        idx = modes.index(current_mode)
+                        current_mode = modes[(idx + 1) % len(modes)]
+                        log.info('Entering mode: %s', current_mode)
+                        start_mode(current_mode)
+                        # wait to avoid re-trigger
+                        time.sleep(0.5)
 
-            time.sleep(0.1)
+            time.sleep(0.01)
 
     except KeyboardInterrupt:
         print('Exiting')
