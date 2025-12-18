@@ -123,6 +123,9 @@ class HIDListener:
                 else:
                     buf = list(data)
 
+                # debug: show raw report buffer
+                log.info('HID raw report: %s', buf)
+
                 # Boot keyboard report: [mod, reserved, k1, k2, k3, k4, k5, k6]
                 keys = set()
                 for usage in buf[2:]:
@@ -140,11 +143,11 @@ class HIDListener:
                     self.key_states[k] = True
                     self.key_press_time[k] = ts
                     self.event_queue.put((k, True, ts))
-                    log.debug('HID event DOWN %s', k)
+                    log.info('HID event DOWN %s', k)
                 for k in up:
                     self.key_states[k] = False
                     self.event_queue.put((k, False, ts))
-                    log.debug('HID event UP %s', k)
+                    log.info('HID event UP %s', k)
 
                 prev_keys = keys
             except Exception as e:
