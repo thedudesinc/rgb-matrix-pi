@@ -8,6 +8,7 @@ import select
 import logging
 import signal
 import os
+from collections import deque
 
 log = logging.getLogger('stdin_listener')
 
@@ -42,6 +43,7 @@ class StdinListener:
         self.key_states = {'up': False, 'down': False, 'left': False, 'right': False}
         self.key_press_time = {'up': 0.0, 'down': 0.0, 'left': 0.0, 'right': 0.0}
         self.last_direction = None  # Track last pressed direction for snake
+        self.direction_queue = deque(maxlen=16)  # capture taps reliably
         self.old_settings = None
 
     def start(self):
@@ -122,10 +124,12 @@ class StdinListener:
                         seq_str = ''.join(sequence)
                         key = self.ESCAPE_MAP.get(seq_str)
                         if key:
+                            ts = time.time()
                             self.key_states[key] = True
-                            self.key_press_time[key] = time.time()
+                            self.key_press_time[key] = ts
                             self.last_direction = key
-                            self.event_queue.put((key, True, time.time()))
+                            self.direction_queue.append(key)  # record tap immediately
+                            self.event_queue.put((key, True, ts))
                         # ignore unknown sequences silently
                     # Incomplete sequences are ignored
                     continue
@@ -157,11 +161,17 @@ class StdinListener:
         return time.time() - self.key_press_time.get(key, 0.0)
     
     def get_last_direction(self):
-        """Get the last direction pressed (doesn't clear it - persists until new direction)"""
+        """Peek last direction pressed (does not clear)."""
         return self.last_direction
-    
+
+    def consume_direction(self):
+        """Pop the oldest queued direction (for responsive games)."""
+        if self.direction_queue:
+            return self.direction_queue.popleft()
+        return None
+
     def consume_last_direction(self):
-        """Get and clear the last direction"""
+        """Get and clear the last direction (legacy)."""
         direction = self.last_direction
         self.last_direction = None
         return direction

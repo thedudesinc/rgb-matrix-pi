@@ -34,8 +34,8 @@ class SnakeGame:
                 break
 
     def update_direction(self, input_listener):
-        """Update direction based on input (called frequently)"""
-        new_dir = input_listener.get_last_direction()
+        """Update direction based on queued input (captures quick taps)."""
+        new_dir = input_listener.consume_direction()
         if new_dir == 'up' and self.direction != (0,1):
             self.direction = (0, -1)
         elif new_dir == 'down' and self.direction != (0,-1):
