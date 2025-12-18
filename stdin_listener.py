@@ -97,9 +97,9 @@ class StdinListener:
                 if ch == '\x1b':
                     buf = ch
                     # Arrow keys send ESC[A, ESC[B, etc. (3 chars total)
-                    # Read remaining chars immediately with very short timeout
-                    for attempt in range(10):
-                        ready, _, _ = select.select([sys.stdin], [], [], 0.001)  # 1ms timeout
+                    # Read remaining chars with reasonable timeout
+                    for attempt in range(5):
+                        ready, _, _ = select.select([sys.stdin], [], [], 0.02)  # 20ms timeout
                         if not ready:
                             log.debug('  No more chars available after %d attempts, buf=%r', attempt, buf)
                             break
