@@ -1,6 +1,8 @@
 import threading
 import queue
 import time
+import os
+import traceback
 
 try:
     from evdev import InputDevice, list_devices, ecodes
@@ -80,8 +82,37 @@ class InputListener:
     def start(self):
         if InputDevice is None:
             raise RuntimeError('evdev is not available; install python-evdev')
-        # Attempt to find/open the device; let _find_device raise helpful errors
-        self.device = self._find_device()
+        # Attempt to find/open the device; collect diagnostics on failure
+        try:
+            self.device = self._find_device()
+        except Exception as e:
+            # gather runtime diagnostics to help debug permission / path issues
+            uid = os.geteuid()
+            gid = os.getegid()
+            dev_stat = None
+            try:
+                if self.device_path:
+                    dev_stat = os.stat(self.device_path)
+            except Exception:
+                dev_stat = None
+
+            devs = list_devices() if list_devices is not None else []
+            names = []
+            for d in devs:
+                try:
+                    names.append((d, InputDevice(d).name))
+                except Exception:
+                    names.append((d, '<unreadable>'))
+
+            tb = traceback.format_exc()
+            raise RuntimeError(
+                "Failed to open input device in _find_device() - diagnostics:\n"
+                f"  requested: {self.device_path}\n"
+                f"  euid={uid} egid={gid}\n"
+                f"  device_stat={dev_stat}\n"
+                f"  available_devices={names}\n"
+                f"  error={e}\n"
+                f"  traceback:\n{tb}")
 
         if not self.device:
             # list available devices for debugging
