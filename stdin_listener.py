@@ -95,19 +95,19 @@ class StdinListener:
                 # Build escape sequence buffer
                 if ch == '\x1b':
                     buf = ch
-                    # Read next chars quickly (for escape sequences like ESC[A)
-                    # Arrow keys send 3 chars: ESC [ letter, need to wait for all
-                    time.sleep(0.005)  # Small delay for sequence to arrive
-                    attempts = 0
-                    max_attempts = 20
-                    while attempts < max_attempts and len(buf) < 3:
-                        ready, _, _ = select.select([sys.stdin], [], [], 0.02)
-                        if ready:
-                            nch = sys.stdin.read(1)
-                            if nch:
-                                buf += nch
-                                log.debug('  Escape sequence building: %r', buf)
-                        attempts += 1
+                    # Arrow keys send ESC[A, ESC[B, etc. (3 chars total)
+                    # Read remaining chars one at a time
+                    for attempt in range(10):
+                        ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+                        if not ready:
+                            log.debug('  No more chars available after %d attempts, buf=%r', attempt, buf)
+                            break
+                        nch = sys.stdin.read(1)
+                        if not nch:
+                            break
+                        buf += nch
+                        log.debug('  Read char, buf now: %r', buf)
+                        # Arrow sequences are 3 chars: ESC [ letter
                         if len(buf) >= 3:
                             break
                     
