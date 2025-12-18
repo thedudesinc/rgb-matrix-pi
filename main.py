@@ -13,7 +13,7 @@ import threading
 import queue
 import os
 
-from pynput_listener import PynputListener as InputListener
+from socket_listener import SocketListener as InputListener
 from clock import ClockDisplay
 from snake import SnakeGame
 
@@ -271,8 +271,8 @@ def main():
 
     visualizer.delay = args.delay
 
-    # Input listener for the tiny USB keyboard (pynput backend)
-    input_listener = InputListener()
+    # Input listener for the tiny USB keyboard (UNIX socket server)
+    input_listener = InputListener(socket_path='/tmp/rgb_input.sock')
     try:
         input_listener.start()
     except Exception as e:
