@@ -10,7 +10,6 @@ import signal
 import os
 
 log = logging.getLogger('stdin_listener')
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(name)s %(levelname)s: %(message)s')
 
 
 class StdinListener:
@@ -69,13 +68,15 @@ class StdinListener:
         # Set terminal to raw mode
         try:
             tty.setraw(sys.stdin.fileno())
+            log.info('Terminal set to raw mode successfully')
         except Exception as e:
             log.error('Could not set raw mode: %s', e)
             return
         
-        log.info('Stdin read loop starting')
+        log.info('Stdin read loop starting, waiting for input...')
         
         buf = ''
+        char_count = 0
         while self.running:
             try:
                 # Non-blocking read with timeout
@@ -88,12 +89,15 @@ class StdinListener:
                     time.sleep(0.01)
                     continue
                 
+                char_count += 1
+                log.debug('Read char #%d: %r (hex: %s)', char_count, ch, ch.encode('latin-1').hex())
+                
                 # Build escape sequence buffer
                 if ch == '\x1b':
                     buf = ch
-                    # Read next chars quickly
+                    # Read next chars quickly (for escape sequences like ESC[A)
                     time.sleep(0.001)
-                    while True:
+                    for _ in range(10):  # Max 10 more chars for escape sequence
                         ready, _, _ = select.select([sys.stdin], [], [], 0.01)
                         if not ready:
                             break
@@ -101,23 +105,28 @@ class StdinListener:
                         if not nch:
                             break
                         buf += nch
+                        log.debug('  Escape sequence building: %r', buf)
                         if len(buf) >= 3:
                             break
+                    
+                    log.debug('Complete escape sequence: %r', buf)
                     
                     # Try to map escape sequence
                     key = self.ESCAPE_MAP.get(buf)
                     if key:
                         # Simulate key down
-                        log.info('Stdin event: %s DOWN', key)
+                        log.info('*** Stdin event: %s DOWN ***', key)
                         self.key_states[key] = True
                         self.key_press_time[key] = time.time()
                         self.event_queue.put((key, True, time.time()))
                         
                         # Auto-release after short delay (stdin doesn't have key-up events)
                         time.sleep(0.1)
-                        log.info('Stdin event: %s UP', key)
+                        log.info('*** Stdin event: %s UP ***', key)
                         self.key_states[key] = False
                         self.event_queue.put((key, False, time.time()))
+                    else:
+                        log.warning('Unrecognized escape sequence: %r', buf)
                     
                     buf = ''
                 elif ch == '\x03':  # Ctrl+C
@@ -132,6 +141,9 @@ class StdinListener:
                     # Send SIGINT to main process
                     os.kill(os.getpid(), signal.SIGINT)
                     break
+                else:
+                    # Log any other character for debugging
+                    log.debug('Ignoring non-escape char: %r (hex: %s)', ch, ch.encode('latin-1').hex())
                 
             except Exception as e:
                 log.exception('Stdin read error: %s', e)

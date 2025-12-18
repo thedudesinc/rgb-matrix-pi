@@ -372,11 +372,16 @@ def main():
         up_press_times = []
         last_event_time = 0
         
+        log.info('Main event loop starting, waiting for keyboard input...')
+        log.info('Press UP arrow 3 times within 2 seconds to switch modes')
+        
         while True:
             evt = input_listener.get_event(timeout=0.1)
             if evt:
                 key, is_down, ts = evt
                 last_event_time = ts
+                
+                log.info('Main loop received event: key=%s is_down=%s', key, is_down)
                 
                 # Detect UP key press (down event)
                 if key == 'up' and is_down:
