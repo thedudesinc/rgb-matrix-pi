@@ -12,6 +12,7 @@ import argparse
 import threading
 import queue
 import os
+import logging
 
 from socket_listener import SocketListener as InputListener
 from clock import ClockDisplay
@@ -28,6 +29,9 @@ from algorithms.random_walk import RandomWalkAlgorithm
 
 # Import maze generators
 from maze_generator import generate_random_walls, generate_maze_walls, generate_rooms
+
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(name)s %(levelname)s: %(message)s')
+log = logging.getLogger('main')
 
 
 class PathfindingVisualizer:
@@ -276,7 +280,23 @@ def main():
     try:
         input_listener.start()
     except Exception as e:
-        print(f"Warning: input listener could not start: {e}")
+        log.warning("input listener could not start: %s", e)
+
+    # start a background thread to log incoming raw events for debugging
+    def _drain_events():
+        while True:
+            try:
+                evt = input_listener.get_event(timeout=1.0)
+                if evt:
+                    key, is_down, ts = evt
+                    log.info('Input event: %s %s (ts=%s)', key, 'DOWN' if is_down else 'UP', ts)
+            except Exception:
+                # keep thread alive on unexpected exceptions
+                log.exception('Error while draining input events')
+                time.sleep(1.0)
+
+    t = threading.Thread(target=_drain_events, daemon=True)
+    t.start()
 
 
     current_mode = args.initial_mode

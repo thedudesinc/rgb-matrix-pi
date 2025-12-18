@@ -11,6 +11,10 @@ import json
 import socket
 import time
 import threading
+import logging
+
+log = logging.getLogger('input_proxy')
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(name)s %(levelname)s: %(message)s')
 
 try:
     from pynput import keyboard
@@ -33,9 +37,10 @@ class Proxy:
                 s.connect(self.socket_path)
                 with self.lock:
                     self.sock = s
-                print('Connected to', self.socket_path)
+                log.info('Connected to %s', self.socket_path)
                 return
             except Exception:
+                log.debug('Connect failed, retrying...')
                 time.sleep(1.0)
 
     def send(self, key, is_down, ts=None):
@@ -47,7 +52,8 @@ class Proxy:
             with self.lock:
                 if self.sock:
                     self.sock.sendall(data)
-        except Exception:
+        except Exception as exc:
+            log.warning('Send failed (%s), reconnecting', exc)
             # on failure, drop and reconnect
             try:
                 with self.lock:

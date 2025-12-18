@@ -4,6 +4,10 @@ import threading
 import json
 import time
 import queue
+import logging
+
+log = logging.getLogger('socket_listener')
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(name)s %(levelname)s: %(message)s')
 
 
 class SocketListener:
@@ -36,6 +40,7 @@ class SocketListener:
 
         self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.server.bind(self.socket_path)
+        log.info('Bound socket %s', self.socket_path)
         # allow non-root clients to connect
         try:
             os.chmod(self.socket_path, 0o666)
@@ -43,6 +48,7 @@ class SocketListener:
             pass
 
         self.server.listen(1)
+        log.info('Listening for input proxy connections')
         self.running = True
         self.thread = threading.Thread(target=self._accept_loop, daemon=True)
         self.thread.start()
@@ -69,6 +75,7 @@ class SocketListener:
         while self.running:
             try:
                 client, _ = self.server.accept()
+                log.info('Client connected')
                 with self._lock:
                     self.client = client
                 # read loop
@@ -85,13 +92,16 @@ class SocketListener:
                             key = msg.get('key')
                             is_down = bool(msg.get('is_down'))
                             ts = float(msg.get('ts', time.time()))
+                            log.debug('Received msg: %s', msg)
                             if key in self.key_states:
                                 self.key_states[key] = is_down
                                 if is_down:
                                     self.key_press_time[key] = ts
                                 self.event_queue.put((key, is_down, ts))
+                                log.info('Queued event: %s %s', key, 'DOWN' if is_down else 'UP')
                         except Exception:
                             # ignore malformed lines
+                            log.warning('Malformed message on socket: %r', line)
                             continue
                 # client disconnected
                 try:
@@ -100,6 +110,7 @@ class SocketListener:
                     pass
                 with self._lock:
                     self.client = None
+                log.info('Client disconnected')
             except Exception:
                 time.sleep(0.1)
 
