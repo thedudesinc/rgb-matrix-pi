@@ -30,7 +30,6 @@ from algorithms.random_walk import RandomWalkAlgorithm
 # Import maze generators
 from maze_generator import generate_random_walls, generate_maze_walls, generate_rooms
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s: %(message)s', datefmt='%H:%M:%S')
 log = logging.getLogger('main')
 
 
