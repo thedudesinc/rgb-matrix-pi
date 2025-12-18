@@ -76,21 +76,11 @@ class StdinListener:
         
         log.info('Stdin read loop starting, waiting for input...')
         
-        buffer = []
-        escape_sequence_start = None
-        
         while self.running:
             try:
-                # Check if data is available
-                ready, _, _ = select.select([sys.stdin], [], [], 0.01)
+                # Wait for input
+                ready, _, _ = select.select([sys.stdin], [], [], 0.1)
                 if not ready:
-                    # If we have an incomplete escape sequence that's been waiting too long, clear it
-                    if escape_sequence_start is not None:
-                        elapsed = time.time() - escape_sequence_start
-                        if elapsed > 0.1:  # 100ms timeout for incomplete sequences
-                            log.warning('Timeout waiting for escape sequence completion, clearing buffer: %r', ''.join(buffer))
-                            buffer.clear()
-                            escape_sequence_start = None
                     continue
                 
                 # Read one character
@@ -112,39 +102,34 @@ class StdinListener:
                 
                 # Start of escape sequence
                 if ch == '\x1b':
-                    buffer = [ch]
-                    escape_sequence_start = time.time()
-                    continue
-                
-                # Building escape sequence
-                if escape_sequence_start is not None:
-                    buffer.append(ch)
-                    seq = ''.join(buffer)
+                    # Read the next 2 characters with short timeout
+                    sequence = [ch]
+                    for i in range(2):
+                        ready, _, _ = select.select([sys.stdin], [], [], 0.05)
+                        if ready:
+                            nch = sys.stdin.read(1)
+                            if nch:
+                                sequence.append(nch)
+                        else:
+                            break
                     
-                    # Check if we have a complete arrow key sequence (ESC[A/B/C/D)
-                    if len(buffer) == 3 and buffer[1] == '[' and buffer[2] in ['A', 'B', 'C', 'D']:
-                        key = self.ESCAPE_MAP.get(seq)
+                    # Check if we have a complete arrow key sequence
+                    if len(sequence) == 3:
+                        seq_str = ''.join(sequence)
+                        key = self.ESCAPE_MAP.get(seq_str)
                         if key:
-                            log.info('Arrow key detected: %s', key)
+                            log.info('Arrow key: %s', key)
                             self.key_states[key] = True
                             self.key_press_time[key] = time.time()
                             self.last_direction = key
                             self.event_queue.put((key, True, time.time()))
                         else:
-                            log.warning('Unrecognized arrow sequence: %r', seq)
-                        
-                        buffer.clear()
-                        escape_sequence_start = None
-                    # If sequence is getting too long, it's probably invalid
-                    elif len(buffer) > 5:
-                        log.warning('Invalid escape sequence (too long): %r', seq)
-                        buffer.clear()
-                        escape_sequence_start = None
+                            log.debug('Unrecognized sequence: %r', seq_str)
+                    else:
+                        log.debug('Incomplete escape sequence: %r', ''.join(sequence))
                     
             except Exception as e:
                 log.exception('Stdin read error: %s', e)
-                buffer.clear()
-                escape_sequence_start = None
                 time.sleep(0.1)
         
         # Always restore terminal when exiting
