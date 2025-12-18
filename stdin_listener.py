@@ -25,10 +25,14 @@ class StdinListener:
     """
 
     ESCAPE_MAP = {
-        '\x1b[A': 'up',
+        '\x1b[A': 'up',      # CSI arrow
         '\x1b[B': 'down',
         '\x1b[C': 'right',
         '\x1b[D': 'left',
+        '\x1bOA': 'up',      # SS3 arrow (some keyboards/terminals)
+        '\x1bOB': 'down',
+        '\x1bOC': 'right',
+        '\x1bOD': 'left',
     }
 
     def __init__(self):
@@ -102,32 +106,27 @@ class StdinListener:
                 
                 # Start of escape sequence
                 if ch == '\x1b':
-                    # Read the next 2 characters with short timeout
+                    # Read up to 3 more characters quickly (enough for CSI/SS3 arrows)
                     sequence = [ch]
-                    for i in range(2):
-                        ready, _, _ = select.select([sys.stdin], [], [], 0.05)
-                        if ready:
-                            nch = sys.stdin.read(1)
-                            if nch:
-                                sequence.append(nch)
-                        else:
+                    for _ in range(3):
+                        ready, _, _ = select.select([sys.stdin], [], [], 0.01)
+                        if not ready:
                             break
-                    
-                    # Check if we have a complete arrow key sequence
-                    if len(sequence) == 3:
-                        seq_str = ''.join(sequence)
-                        key = self.ESCAPE_MAP.get(seq_str)
-                        if key:
-                            log.info('Arrow key: %s', key)
-                            self.key_states[key] = True
-                            self.key_press_time[key] = time.time()
-                            self.last_direction = key
-                            self.event_queue.put((key, True, time.time()))
-                        else:
-                            log.debug('Unrecognized sequence: %r', seq_str)
-                    else:
-                        log.debug('Incomplete escape sequence: %r', ''.join(sequence))
-                    
+                        nch = sys.stdin.read(1)
+                        if not nch:
+                            break
+                        sequence.append(nch)
+
+                    seq_str = ''.join(sequence)
+                    key = self.ESCAPE_MAP.get(seq_str)
+                    if key:
+                        self.key_states[key] = True
+                        self.key_press_time[key] = time.time()
+                        self.last_direction = key
+                        self.event_queue.put((key, True, time.time()))
+                    # ignore unknown sequences silently
+                    continue
+
             except Exception as e:
                 log.exception('Stdin read error: %s', e)
                 time.sleep(0.1)
