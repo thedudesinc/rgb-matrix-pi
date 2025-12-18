@@ -109,12 +109,16 @@ class HIDListener:
 
     def stop(self):
         self.running = False
+        # Wait briefly for thread to exit
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=1.0)
         try:
             if self.dev:
                 try:
                     self.dev.close()
-                except Exception:
-                    pass
+                    log.info('HID device closed')
+                except Exception as e:
+                    log.debug('Device close exception (expected): %s', e)
         except Exception:
             pass
 
@@ -126,6 +130,10 @@ class HIDListener:
         
         while self.running:
             try:
+                # Check again before read in case stop() was called
+                if not self.running:
+                    break
+                    
                 data = None
                 try:
                     # Nonblocking read with short timeout
@@ -134,7 +142,11 @@ class HIDListener:
                     # some hid bindings use read(size) returning bytes without timeout
                     data = self.dev.read(8)
                 except OSError as e:
-                    # Specific OSError handling
+                    # During shutdown, OSError is expected when device closes
+                    if not self.running:
+                        log.debug('OSError during shutdown (expected): %s', e)
+                        break
+                    # Otherwise it's a real error
                     log.error('HID read OSError: %s (errno: %s)', e, getattr(e, 'errno', 'none'))
                     error_count += 1
                     if error_count >= max_errors:
