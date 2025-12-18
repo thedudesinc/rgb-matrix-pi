@@ -37,6 +37,7 @@ class StdinListener:
         self.event_queue = queue.Queue()
         self.key_states = {'up': False, 'down': False, 'left': False, 'right': False}
         self.key_press_time = {'up': 0.0, 'down': 0.0, 'left': 0.0, 'right': 0.0}
+        self.last_direction = None  # Track last pressed direction for snake
         self.old_settings = None
 
     def start(self):
@@ -96,9 +97,9 @@ class StdinListener:
                 if ch == '\x1b':
                     buf = ch
                     # Arrow keys send ESC[A, ESC[B, etc. (3 chars total)
-                    # Read remaining chars one at a time
+                    # Read remaining chars immediately with very short timeout
                     for attempt in range(10):
-                        ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+                        ready, _, _ = select.select([sys.stdin], [], [], 0.001)  # 1ms timeout
                         if not ready:
                             log.debug('  No more chars available after %d attempts, buf=%r', attempt, buf)
                             break
@@ -116,17 +117,13 @@ class StdinListener:
                     # Try to map escape sequence
                     key = self.ESCAPE_MAP.get(buf)
                     if key:
-                        # Simulate key down
+                        # Send key down immediately
                         log.info('*** Stdin event: %s DOWN ***', key)
                         self.key_states[key] = True
                         self.key_press_time[key] = time.time()
+                        self.last_direction = key  # Track for games
                         self.event_queue.put((key, True, time.time()))
-                        
-                        # Auto-release after short delay (stdin doesn't have key-up events)
-                        time.sleep(0.1)
-                        log.info('*** Stdin event: %s UP ***', key)
-                        self.key_states[key] = False
-                        self.event_queue.put((key, False, time.time()))
+                        # Don't auto-release - let main loop or game handle it
                     else:
                         log.warning('Unrecognized escape sequence: %r', buf)
                     
@@ -172,3 +169,9 @@ class StdinListener:
         if not self.is_pressed(key):
             return 0.0
         return time.time() - self.key_press_time.get(key, 0.0)
+    
+    def get_last_direction(self):
+        """Get and consume the last direction pressed (for games like snake)"""
+        direction = self.last_direction
+        self.last_direction = None
+        return direction

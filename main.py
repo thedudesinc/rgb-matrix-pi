@@ -373,7 +373,7 @@ def main():
         last_event_time = 0
         
         log.info('Main event loop starting, waiting for keyboard input...')
-        log.info('Press UP arrow 3 times within 2 seconds to switch modes')
+        log.info('Press UP arrow 5 times within 2 seconds to switch modes')
         
         while True:
             evt = input_listener.get_event(timeout=0.1)
@@ -391,8 +391,8 @@ def main():
                     
                     log.info('UP press count: %d', len(up_press_times))
                     
-                    # If 3 presses within 2 seconds, switch mode
-                    if len(up_press_times) >= 3:
+                    # If 5 presses within 2 seconds, switch mode
+                    if len(up_press_times) >= 5:
                         log.info('Mode switch triggered!')
                         up_press_times.clear()
                         

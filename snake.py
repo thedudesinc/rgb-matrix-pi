@@ -34,14 +34,15 @@ class SnakeGame:
                 break
 
     def step(self, input_listener):
-        # update direction from input_listener
-        if input_listener.is_pressed('up') and self.direction != (0,1):
+        # Check for new direction input (event-based, not state-based)
+        new_dir = input_listener.get_last_direction()
+        if new_dir == 'up' and self.direction != (0,1):
             self.direction = (0, -1)
-        elif input_listener.is_pressed('down') and self.direction != (0,-1):
+        elif new_dir == 'down' and self.direction != (0,-1):
             self.direction = (0, 1)
-        elif input_listener.is_pressed('left') and self.direction != (1,0):
+        elif new_dir == 'left' and self.direction != (1,0):
             self.direction = (-1, 0)
-        elif input_listener.is_pressed('right') and self.direction != (-1,0):
+        elif new_dir == 'right' and self.direction != (-1,0):
             self.direction = (1, 0)
 
         head = self.snake[0]
