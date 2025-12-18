@@ -14,7 +14,7 @@ import queue
 import os
 import logging
 
-from socket_listener import SocketListener as InputListener
+from hid_listener import HIDListener as InputListener
 from clock import ClockDisplay
 from snake import SnakeGame
 
@@ -259,6 +259,12 @@ def main():
                        help='Initial mode to start in')
     parser.add_argument('--snake-grid', type=int, default=32,
                        help='Logical grid size for snake (default 32 => 2x2 pixels per cell on 64x64)')
+    parser.add_argument('--hid-vid', type=str, default=None,
+                       help='HID vendor id (hex like 0x046d or decimal)')
+    parser.add_argument('--hid-pid', type=str, default=None,
+                       help='HID product id (hex like 0xc52b or decimal)')
+    parser.add_argument('--hid-path', type=str, default=None,
+                       help='HID device path (optional, e.g. /dev/hidraw0)')
     
     args = parser.parse_args()
     
@@ -275,8 +281,22 @@ def main():
 
     visualizer.delay = args.delay
 
-    # Input listener for the tiny USB keyboard (UNIX socket server)
-    input_listener = InputListener(socket_path='/tmp/rgb_input.sock')
+    # Input listener for the tiny USB keyboard (hidapi)
+    # parse vid/pid
+    vid = None
+    pid = None
+    if args.hid_vid:
+        try:
+            vid = int(args.hid_vid, 0)
+        except Exception:
+            vid = int(args.hid_vid)
+    if args.hid_pid:
+        try:
+            pid = int(args.hid_pid, 0)
+        except Exception:
+            pid = int(args.hid_pid)
+
+    input_listener = InputListener(vid=vid, pid=pid, device_path=args.hid_path)
     try:
         input_listener.start()
     except Exception as e:
