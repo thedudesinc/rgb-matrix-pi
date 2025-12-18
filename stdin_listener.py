@@ -106,25 +106,28 @@ class StdinListener:
                 
                 # Start of escape sequence
                 if ch == '\x1b':
-                    # Read up to 3 more characters quickly (enough for CSI/SS3 arrows)
                     sequence = [ch]
-                    for _ in range(3):
-                        ready, _, _ = select.select([sys.stdin], [], [], 0.01)
-                        if not ready:
+                    # Read the next 2 characters with short timeout (handles CSI and SS3 arrows)
+                    for _ in range(2):
+                        ready, _, _ = select.select([sys.stdin], [], [], 0.05)
+                        if ready:
+                            nch = sys.stdin.read(1)
+                            if nch:
+                                sequence.append(nch)
+                        else:
                             break
-                        nch = sys.stdin.read(1)
-                        if not nch:
-                            break
-                        sequence.append(nch)
 
-                    seq_str = ''.join(sequence)
-                    key = self.ESCAPE_MAP.get(seq_str)
-                    if key:
-                        self.key_states[key] = True
-                        self.key_press_time[key] = time.time()
-                        self.last_direction = key
-                        self.event_queue.put((key, True, time.time()))
-                    # ignore unknown sequences silently
+                    # Only handle complete 3-char sequences
+                    if len(sequence) == 3:
+                        seq_str = ''.join(sequence)
+                        key = self.ESCAPE_MAP.get(seq_str)
+                        if key:
+                            self.key_states[key] = True
+                            self.key_press_time[key] = time.time()
+                            self.last_direction = key
+                            self.event_queue.put((key, True, time.time()))
+                        # ignore unknown sequences silently
+                    # Incomplete sequences are ignored
                     continue
 
             except Exception as e:
