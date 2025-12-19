@@ -88,7 +88,9 @@ class StdinListener:
             return
         
         log.info('Stdin read loop starting, waiting for input...')
-        
+
+        buf = deque()
+
         while self.running:
             try:
                 # Wait for input with short timeout for responsiveness
@@ -96,39 +98,40 @@ class StdinListener:
                 if not ready:
                     continue
 
-                # Read one character
-                ch = sys.stdin.read(1)
-                if not ch:
+                chunk = os.read(sys.stdin.fileno(), 32)
+                if not chunk:
                     continue
-                log.info('Char read: %r (hex=%s)', ch, ch.encode('latin-1').hex())
-                
-                # Handle Ctrl+C immediately
-                if ch == '\x03':
-                    log.info('Ctrl+C detected, raising KeyboardInterrupt')
-                    self.running = False
-                    if self.old_settings:
-                        try:
-                            termios.tcsetattr(sys.stdin, termios.TCSANOW, self.old_settings)
-                        except Exception:
-                            pass
-                    os.kill(os.getpid(), signal.SIGINT)
-                    break
-                
-                # Start of escape sequence
-                if ch == '\x1b':
-                    sequence = [ch]
-                    # Read exactly two more chars quickly (CSI/SS3 arrows)
-                    for _ in range(2):
-                        ready, _, _ = select.select([sys.stdin], [], [], 0.005)
-                        if not ready:
-                            break
-                        nch = sys.stdin.read(1)
-                        if not nch:
-                            break
-                        sequence.append(nch)
 
-                    if len(sequence) == 3:
-                        seq_str = ''.join(sequence)
+                # Push into buffer
+                for b in chunk.decode(errors='ignore'):
+                    buf.append(b)
+
+                # Process buffer
+                while buf:
+                    ch = buf.popleft()
+                    log.debug('Char from buffer: %r', ch)
+
+                    # Handle Ctrl+C immediately
+                    if ch == '\x03':
+                        log.info('Ctrl+C detected, raising KeyboardInterrupt')
+                        self.running = False
+                        if self.old_settings:
+                            try:
+                                termios.tcsetattr(sys.stdin, termios.TCSANOW, self.old_settings)
+                            except Exception:
+                                pass
+                        os.kill(os.getpid(), signal.SIGINT)
+                        break
+
+                    # Start of escape sequence
+                    if ch == '\x1b':
+                        # Need two more chars; if not available yet, push back and wait
+                        if len(buf) < 2:
+                            buf.appendleft(ch)
+                            break
+                        second = buf.popleft()
+                        third = buf.popleft()
+                        seq_str = ch + second + third
                         log.info('ESC sequence read: %r', seq_str)
                         key = self.ESCAPE_MAP.get(seq_str)
                         if key:
@@ -141,8 +144,15 @@ class StdinListener:
                             self.event_queue.put((key, True, ts))
                         else:
                             log.info('Unrecognized ESC sequence: %r', seq_str)
-                    # Ignore incomplete sequences
+                        continue
+
+                    # Ignore other chars
+                else:
+                    # continue outer loop unless break hit
                     continue
+
+                if not self.running:
+                    break
 
             except Exception as e:
                 log.exception('Stdin read error: %s', e)

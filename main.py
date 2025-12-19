@@ -300,7 +300,7 @@ def main():
             # snake game uses SnakeGame class
             def snake_runner():
                 game = SnakeGame(visualizer.matrix, grid_size=args.snake_grid)
-                tick = 0.14  # slightly faster for responsiveness; directions are queued
+                tick = 0.18  # slower to reduce overshoot while we debug input
                 last_update = time.time()
                 
                 while not mode_stop.is_set():
