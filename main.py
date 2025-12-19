@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""
-RGB Matrix Pathfinding Visualizer - Main Orchestration
-Runs multiple pathfinding algorithms in sequence
-"""
-
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
 from PIL import Image, ImageDraw, ImageFont
 import time
