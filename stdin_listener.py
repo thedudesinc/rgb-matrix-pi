@@ -15,6 +15,7 @@ log = logging.getLogger('stdin_listener')
 if not log.handlers:
     _handler = logging.StreamHandler(sys.stderr)
     _handler.setFormatter(logging.Formatter('[%(asctime)s] %(name)s %(levelname)s: %(message)s'))
+    _handler.terminator = '\r\n'  # reset column even in raw mode
     log.addHandler(_handler)
     log.setLevel(logging.INFO)
 
@@ -94,7 +95,7 @@ class StdinListener:
                 ready, _, _ = select.select([sys.stdin], [], [], 0.005)
                 if not ready:
                     continue
-                
+
                 # Read one character
                 ch = sys.stdin.read(1)
                 if not ch:
@@ -116,9 +117,9 @@ class StdinListener:
                 # Start of escape sequence
                 if ch == '\x1b':
                     sequence = [ch]
-                    # Read a few more chars until a short gap (covers longer CSI variants)
-                    for _ in range(4):  # up to 5 chars total
-                        ready, _, _ = select.select([sys.stdin], [], [], 0.01)
+                    # Read exactly two more chars quickly (CSI/SS3 arrows)
+                    for _ in range(2):
+                        ready, _, _ = select.select([sys.stdin], [], [], 0.005)
                         if not ready:
                             break
                         nch = sys.stdin.read(1)
@@ -126,27 +127,21 @@ class StdinListener:
                             break
                         sequence.append(nch)
 
-                    seq_str = ''.join(sequence)
-                    log.info('ESC sequence read: %r', seq_str)
-
-                    # Map by exact match or prefix (handles ESC[1;2A, etc.)
-                    key = self.ESCAPE_MAP.get(seq_str)
-                    if not key:
-                        for pat, name in self.ESCAPE_MAP.items():
-                            if seq_str.startswith(pat):
-                                key = name
-                                break
-
-                    if key:
-                        ts = time.time()
-                        self.key_states[key] = True
-                        self.key_press_time[key] = ts
-                        self.last_direction = key
-                        self.direction_queue.append(key)
-                        log.info('Enqueue direction: %s (queue size=%d)', key, len(self.direction_queue))
-                        self.event_queue.put((key, True, ts))
-                    else:
-                        log.info('Unrecognized ESC sequence: %r', seq_str)
+                    if len(sequence) == 3:
+                        seq_str = ''.join(sequence)
+                        log.info('ESC sequence read: %r', seq_str)
+                        key = self.ESCAPE_MAP.get(seq_str)
+                        if key:
+                            ts = time.time()
+                            self.key_states[key] = True
+                            self.key_press_time[key] = ts
+                            self.last_direction = key
+                            self.direction_queue.append(key)
+                            log.info('Enqueue direction: %s (queue size=%d)', key, len(self.direction_queue))
+                            self.event_queue.put((key, True, ts))
+                        else:
+                            log.info('Unrecognized ESC sequence: %r', seq_str)
+                    # Ignore incomplete sequences
                     continue
 
             except Exception as e:
