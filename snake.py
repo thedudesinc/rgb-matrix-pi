@@ -23,11 +23,9 @@ def _ensure_game_data_dir():
                 import pwd
                 user_info = pwd.getpwnam(os.environ['SUDO_USER'])
                 os.chown(target, user_info.pw_uid, user_info.pw_gid)
-                parent = os.path.dirname(target)
-                if parent and os.path.isdir(parent):
-                    os.chown(parent, user_info.pw_uid, user_info.pw_gid)
             except Exception as chown_err:
-                log.warning('Could not chown %s: %s', target, chown_err)
+                # Chown is best-effort; don't warn if it fails on system-managed dirs like /var/tmp
+                log.debug('Chown skipped/failed for %s: %s', target, chown_err)
         return target
     except PermissionError as e:
         log.error('Permission denied creating %s: %s', target, e)
@@ -94,7 +92,7 @@ class SnakeGame:
             elif new_dir == 'right' and self.direction != (-1,0):
                 self.direction = (1, 0)
             if self.direction != old_dir:
-                log.info('Direction change: %s -> %s', old_dir, self.direction)
+                log.debug('Direction change: %s -> %s', old_dir, self.direction)
     
     def move(self):
         """Move the snake one step (called on game tick)"""
@@ -150,13 +148,14 @@ class SnakeGame:
 
     def render(self):
         img = Image.new('RGB', (self.matrix.width, self.matrix.height), (0,0,0))
-        for x,y in self.snake:
+        for idx, (x, y) in enumerate(self.snake):
+            color = (0, 0, 255) if idx == 0 else (0, 255, 0)
             for dx in range(self.cell_w):
                 for dy in range(self.cell_h):
                     px = x * self.cell_w + dx
                     py = y * self.cell_h + dy
                     if 0 <= px < self.matrix.width and 0 <= py < self.matrix.height:
-                        img.putpixel((px, py), (0,255,0))
+                        img.putpixel((px, py), color)
         # food
         fx, fy = self.food
         for dx in range(self.cell_w):

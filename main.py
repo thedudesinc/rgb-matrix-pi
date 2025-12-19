@@ -13,7 +13,7 @@ stderr_handler = logging.StreamHandler(sys.stderr)
 stderr_handler.setFormatter(logging.Formatter('%(asctime)s %(name)s: %(message)s', datefmt='%H:%M:%S'))
 stderr_handler.terminator = '\r\n'
 logging.root.addHandler(stderr_handler)
-logging.root.setLevel(logging.INFO)
+logging.root.setLevel(logging.WARNING)
 
 from stdin_listener import StdinListener as InputListener
 from clock import ClockDisplay
