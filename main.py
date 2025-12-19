@@ -307,8 +307,13 @@ def main():
                     if not game.alive:
                         img = Image.new('RGB', (visualizer.width, visualizer.height), (0,0,0))
                         draw = ImageDraw.Draw(img)
-                        msg = f'Score:{game.score}'
-                        draw.text((2, visualizer.height//2-4), msg, fill=(255,255,0))
+                        # Show final score
+                        msg = f'Score: {game.score}'
+                        draw.text((2, visualizer.height//2 - 10), msg, fill=(255,255,0))
+                        # Show high score, mark NEW if achieved
+                        hs = getattr(game, 'high_score', 0)
+                        hs_msg = f'High: {hs}' + (' (NEW)' if getattr(game, 'new_high', False) else '')
+                        draw.text((2, visualizer.height//2 + 6), hs_msg, fill=(0,200,255))
                         visualizer.matrix.SetImage(img)
                         time.sleep(2)
                         game.reset()

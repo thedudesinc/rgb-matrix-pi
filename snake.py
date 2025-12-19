@@ -1,6 +1,7 @@
 from PIL import Image
 import random
 import logging
+import os
 
 log = logging.getLogger('snake')
 
@@ -19,6 +20,10 @@ class SnakeGame:
         self.grid = grid_size
         self.cell_w = max(1, matrix.width // self.grid)
         self.cell_h = max(1, matrix.height // self.grid)
+        # High score persistence
+        self.high_score_path = os.path.join(os.path.dirname(__file__), 'highscore.txt')
+        self.high_score = self._load_high_score(self.high_score_path)
+        self.new_high = False
         self.reset()
 
     def reset(self):
@@ -27,6 +32,7 @@ class SnakeGame:
         self.place_food()
         self.alive = True
         self.score = 0
+        self.new_high = False
 
     def place_food(self):
         while True:
@@ -60,6 +66,15 @@ class SnakeGame:
         if new_head in self.snake:
             self.alive = False
             log.info('Collision detected, game over')
+            # Update high score if needed
+            try:
+                if self.score > self.high_score:
+                    self.high_score = self.score
+                    self.new_high = True
+                    self._save_high_score(self.high_score_path, self.high_score)
+                    log.info('New high score: %d', self.high_score)
+            except Exception as e:
+                log.warning('Failed to save high score: %s', e)
             return
         self.snake.insert(0, new_head)
         if new_head == self.food:
@@ -68,6 +83,20 @@ class SnakeGame:
             self.place_food()
         else:
             self.snake.pop()
+
+    def _load_high_score(self, path):
+        try:
+            with open(path, 'r') as f:
+                val = int(f.read().strip() or '0')
+                return max(0, val)
+        except Exception:
+            return 0
+
+    def _save_high_score(self, path, value):
+        tmp = path + '.tmp'
+        with open(tmp, 'w') as f:
+            f.write(str(int(value)))
+        os.replace(tmp, path)
     
     def step(self, input_listener):
         """Legacy combined method for backward compatibility"""
