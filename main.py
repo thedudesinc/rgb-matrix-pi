@@ -295,6 +295,9 @@ def main():
     current_mode = args.initial_mode
     mode_thread = None
     mode_stop = None
+    hold_start = None
+    last_down_event = 0.0
+    last_mode_switch = 0.0
 
     def start_mode(mode_name):
         nonlocal mode_thread, mode_stop
@@ -392,23 +395,55 @@ def main():
 
     try:
         log.info('Main loop running in %s mode', current_mode)
-        
-        # Just keep the mode running indefinitely
         while True:
-            time.sleep(1)
+            now = time.time()
+
+            # Down long-press detection with debounce
+            if hold_start and (now - last_down_event) > 0.3:
+                hold_start = None
+            if hold_start and (now - hold_start) >= 3.0 and (now - last_mode_switch) >= 1.0:
+                if mode_stop:
+                    mode_stop.set()
+                if mode_thread:
+                    mode_thread.join()
+                # cycle modes: clock -> visualizer -> snake -> clock
+                if current_mode == 'clock':
+                    current_mode = 'visualizer'
+                elif current_mode == 'visualizer':
+                    current_mode = 'snake'
+                else:
+                    current_mode = 'clock'
+                log.info('Long-press down detected, switching to %s mode', current_mode)
+                start_mode(current_mode)
+                last_mode_switch = now
+                hold_start = None
+                continue
+
+            evt = input_listener.get_event(timeout=0.1)
+            if not evt:
+                continue
+            key, pressed, ts = evt
+            if key == 'down' and pressed:
+                last_down_event = ts
+                if hold_start is None:
+                    hold_start = ts
+                continue
+            if key == 'quit' and pressed:
+                log.info('Quit requested via keyboard')
+                break
 
     except KeyboardInterrupt:
-        print('Exiting')
-    finally:
-        if mode_stop:
-            mode_stop.set()
-        if mode_thread:
-            mode_thread.join(timeout=1.0)
-        try:
-            input_listener.stop()
-        except Exception:
-            pass
-        visualizer.matrix.Clear()
+        log.info('KeyboardInterrupt received, exiting main loop')
+
+    if mode_stop:
+        mode_stop.set()
+    if mode_thread:
+        mode_thread.join(timeout=1.0)
+    try:
+        input_listener.stop()
+    except Exception:
+        pass
+    visualizer.matrix.Clear()
 
 
 if __name__ == "__main__":

@@ -43,6 +43,13 @@ class StdinListener:
         '\x1bOD': 'left',
     }
 
+    KEY_MAP = {
+        '1': 'mode_clock',
+        '2': 'mode_visualizer',
+        '3': 'mode_snake',
+        'q': 'quit',
+    }
+
     def __init__(self):
         self.thread = None
         self.running = False
@@ -144,6 +151,14 @@ class StdinListener:
                             self.event_queue.put((key, True, ts))
                         else:
                             log.debug('Unrecognized ESC sequence: %r', seq_str)
+                        continue
+
+                    # Single-key commands
+                    mapped = self.KEY_MAP.get(ch)
+                    if mapped:
+                        ts = time.time()
+                        self.event_queue.put((mapped, True, ts))
+                        log.debug('Enqueue command: %s', mapped)
                         continue
 
                     # Ignore other chars
