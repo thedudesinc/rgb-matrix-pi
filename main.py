@@ -42,6 +42,20 @@ if not logging.root.handlers:
     handler.terminator = '\r\n'
     logging.root.addHandler(handler)
 
+# Wrap stdout to convert \n to \r\n for print() statements in raw TTY mode
+class CRLFWriter:
+    def __init__(self, wrapped):
+        self.wrapped = wrapped
+    def write(self, text):
+        self.wrapped.write(text.replace('\n', '\r\n'))
+    def flush(self):
+        self.wrapped.flush()
+    def __getattr__(self, name):
+        return getattr(self.wrapped, name)
+
+if sys.stdout.isatty():
+    sys.stdout = CRLFWriter(sys.stdout)
+
 
 class PathfindingVisualizer:
     def __init__(self, rows=64, cols=64, hardware_mapping='adafruit-hat', gpio_slowdown=2, 
@@ -249,7 +263,7 @@ def main():
                        help='GPIO mapping (adafruit-hat, regular, etc.)')
     parser.add_argument('--led-slowdown-gpio', type=int, default=5,
                        help='GPIO slowdown (0=no slowdown, 1-10=increasing slowdown)')
-    parser.add_argument('--led-pwm-bits', type=int, default=5,
+    parser.add_argument('--led-pwm-bits', type=int, default=8,
                        help='PWM bits (1-11, lower=less flickering but fewer colors)')
     parser.add_argument('--led-brightness', type=int, default=75,
                        help='Brightness level (1-100)')
