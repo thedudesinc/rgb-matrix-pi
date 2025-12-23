@@ -317,6 +317,8 @@ def main():
     hold_start = None
     last_down_event = 0.0
     last_mode_switch = 0.0
+    hold_right_start = None
+    last_right_event = 0.0
 
     def start_mode(mode_name):
         nonlocal mode_thread, mode_stop
@@ -421,6 +423,29 @@ def main():
         while True:
             now = time.time()
 
+            # Right long-press detection for restart (with debounce)
+            if hold_right_start and (now - last_right_event) > 0.3:
+                hold_right_start = None
+            if hold_right_start and (now - hold_right_start) >= 3.0:
+                log.info('Long-press right detected, restarting Pi...')
+                # Display restart message on matrix
+                import subprocess
+                from PIL import ImageDraw, ImageFont
+                img = Image.new('RGB', (visualizer.width, visualizer.height), (0, 0, 0))
+                draw = ImageDraw.Draw(img)
+                draw.text((2, visualizer.height//2 - 4), 'Restarting...', fill=(255, 100, 0))
+                visualizer.matrix.SetImage(img)
+                time.sleep(1)
+                visualizer.matrix.Clear()
+                # Stop current mode gracefully
+                if mode_stop:
+                    mode_stop.set()
+                if mode_thread:
+                    mode_thread.join(timeout=1.0)
+                # Execute restart command
+                subprocess.run(['sudo', 'reboot'], check=False)
+                break
+
             # Down long-press detection with debounce
             if hold_start and (now - last_down_event) > 0.3:
                 hold_start = None
@@ -446,6 +471,11 @@ def main():
             if not evt:
                 continue
             key, pressed, ts = evt
+            if key == 'right' and pressed:
+                last_right_event = ts
+                if hold_right_start is None:
+                    hold_right_start = ts
+                continue
             if key == 'down' and pressed:
                 last_down_event = ts
                 if hold_start is None:
