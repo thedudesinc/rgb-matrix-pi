@@ -430,6 +430,7 @@ def main():
                 log.info('Long-press right detected, restarting Pi...')
                 # Display restart message on matrix
                 import subprocess
+                import os
                 from PIL import ImageDraw, ImageFont
                 img = Image.new('RGB', (visualizer.width, visualizer.height), (0, 0, 0))
                 draw = ImageDraw.Draw(img)
@@ -442,8 +443,11 @@ def main():
                     mode_stop.set()
                 if mode_thread:
                     mode_thread.join(timeout=1.0)
-                # Execute restart command
-                subprocess.run(['sudo', 'reboot'], check=False)
+                # Execute restart command (no sudo needed if already root)
+                if os.geteuid() == 0:
+                    subprocess.run(['reboot'], check=False)
+                else:
+                    subprocess.run(['sudo', '-n', 'reboot'], check=False)
                 break
 
             # Down long-press detection with debounce
